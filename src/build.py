@@ -650,8 +650,7 @@ ALL_SOURCES = [
            GIT_MIRROR_BASE + 'v8/v8.git',
            custom_sync=ChromiumFetchSync),
     Source('jsc', JSC_SRC_DIR,
-           WEBKIT_GIT_BASE + 'webkit.git', depth=1000,
-           no_windows=True, no_linux=True),
+           WEBKIT_GIT_BASE + 'webkit.git', depth=1000),
     Source('host-toolchain', PREBUILT_CLANG,
            GIT_MIRROR_BASE + 'chromium/src/tools/clang.git',
            custom_sync=SyncToolchain),
@@ -945,10 +944,11 @@ def Jsc():
   Mkdir(JSC_OUT_DIR)
 
   try:
-    command = ['xcrun', PREBUILT_CMAKE_BIN, '-Wno-dev',
+    xcrun = ['xcrun'] if IsMac() else []
+    command = xcrun + [PREBUILT_CMAKE_BIN, '-Wno-dev',
                '..', '-G', 'Ninja',
                '-DCMAKE_BUILD_TYPE="Release"',
-               '-DPORT=Mac',
+               '-DPORT=JSCOnly',
                '-DENABLE_WEBASSEMBLY=ON']
 
     command.extend(OverrideCMakeCompiler())
@@ -958,15 +958,18 @@ def Jsc():
 
     proc.check_call(command, cwd=JSC_OUT_DIR)
     proc.check_call(['ninja', 'jsc'] + jobs, cwd=JSC_OUT_DIR)
-    proc.check_call(['../Tools/Scripts/run-javascriptcore-tests',
-                     '--root=bin',
-                     '--filter', 'wasm',
-                     '--no-build', '--no-testapi', '--no-testmasm',
-                     '--no-testb3', '--no-testair', '--fast'],
-                    cwd=JSC_OUT_DIR)
     to_archive = [Executable(os.path.join('bin', 'jsc'))]
     for a in to_archive:
       CopyBinaryToArchive(os.path.join(JSC_OUT_DIR, a))
+
+    if options.run_tool_tests:
+      buildbot.Step('JSC tests')
+      proc.check_call(['../Tools/Scripts/run-javascriptcore-tests',
+                       '--root=bin',
+                       '--filter', 'wasm',
+                       '--no-build', '--no-testapi', '--no-testmasm',
+                       '--no-testb3', '--no-testair', '--fast'],
+                      cwd=JSC_OUT_DIR)
 
   except proc.CalledProcessError:
     # JSC cmake build is flaky because it is not the official build. For the
@@ -1427,7 +1430,7 @@ def AllBuilds(use_asm=False):
       # Host tools
       Build('llvm', LLVM),
       Build('v8', V8),
-      Build('jsc', Jsc, no_windows=True, no_linux=True),
+      Build('jsc', Jsc),
       Build('wabt', Wabt),
       Build('ocaml', OCaml, no_windows=True),
       Build('spec', Spec, no_windows=True),
