@@ -159,7 +159,7 @@ def WindowsFSEscape(path):
 def NodePlatformName():
   return {'darwin': 'darwin-x64',
           'linux2': 'linux-x64',
-          'win32': 'win32'}[sys.platform]
+          'win32': 'win-x64'}[sys.platform]
 
 
 def CMakePlatformName():
@@ -190,9 +190,10 @@ PREBUILT_CMAKE_BASE_NAME = 'cmake-%s-%s-%s' % (PREBUILT_CMAKE_VERSION,
 PREBUILT_CMAKE_DIR = os.path.join(WORK_DIR, PREBUILT_CMAKE_BASE_NAME)
 PREBUILT_CMAKE_BIN = os.path.join(PREBUILT_CMAKE_DIR, CMakeBinDir(), 'cmake')
 
+NODE_BINDIR = 'bin' if not IsWindows() else '.'
 NODE_BIN = Executable(os.path.join(WORK_DIR,
                                    NODE_BASE_NAME + NodePlatformName(),
-                                   'bin', 'node'))
+                                   NODE_BINDIR, 'node'))
 
 
 # Java installed in the buildbots are too old while emscripten uses closure
@@ -533,7 +534,7 @@ def SyncToolchain(name, src_dir, git_repo):
     assert os.path.isfile(CXX), 'Expect clang++ at %s' % CXX
 
 
-def SyncArchive(out_dir, name, url):
+def SyncArchive(out_dir, name, url, members=None):
   """Download and extract an archive (zip, tar.gz or tar.xz) file from a URL.
 
   The extraction happens in WORK_DIR and the convention for our archives is
@@ -565,7 +566,7 @@ def SyncArchive(out_dir, name, url):
       ext = os.path.splitext(url)[-1]
       if ext == '.zip':
         with zipfile.ZipFile(t, 'r') as zip:
-          zip.extractall(path=WORK_DIR)
+          zip.extractall(members=members, path=WORK_DIR)
       elif ext == '.xz':
         proc.check_call(['tar', '-xvf', t.name], cwd=WORK_DIR)
       else:
@@ -584,33 +585,15 @@ def SyncPrebuiltCMake(name, src_dir, git_repo):
   SyncArchive(PREBUILT_CMAKE_DIR, 'cmake', url)
 
 
-def SyncWindowsNode():
-  if os.path.isfile(NODE_BIN):
-    print NODE_BIN, 'already exists'
-    return
-  Mkdir(os.path.dirname(NODE_BIN))
-  node_url = WASM_STORAGE_BASE + 'node.exe'
-  print 'Downloading node.js %s from %s' % (NODE_VERSION, node_url)
-  try:
-    f = urllib2.urlopen(node_url)
-    print 'URL: %s' % f.geturl()
-    print 'Info: %s' % f.info()
-    with open(NODE_BIN, 'wb') as n:
-      n.write(f.read())
-  except urllib2.URLError as e:
-    print 'Error downloading %s: %s' % (node_url, e)
-    raise
-  return
-
-
 def SyncPrebuiltNodeJS(name, src_dir, git_repo):
-  if IsWindows():
-    return SyncWindowsNode()
-  extension = {'darwin': 'gz', 'linux2': 'xz'}[sys.platform]
+  extension = {'darwin': '.tar.gz',
+               'linux2': '.tar.xz',
+               'win32': '.zip'}[sys.platform]
   out_dir = os.path.join(WORK_DIR, NODE_BASE_NAME + NodePlatformName())
-  tarball = NODE_BASE_NAME + NodePlatformName() + '.tar.' + extension
+  tarball = NODE_BASE_NAME + NodePlatformName() + extension
   node_url = WASM_STORAGE_BASE + tarball
-  return SyncArchive(out_dir, name, node_url)
+  bin = NODE_BASE_NAME + NodePlatformName() + '/node.exe' if IsWindows() else None
+  return SyncArchive(out_dir, name, node_url, members=[bin])
 
 
 # Utilities needed for running LLVM regression tests on Windows
